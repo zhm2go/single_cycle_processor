@@ -91,5 +91,33 @@ module processor(
     input [31:0] data_readRegA, data_readRegB;
 
     /* YOUR CODE STARTS HERE */
-
+	 wire clk_2, clk_4, isNotEqual, isLessThan, overflow;
+	 reg[31:0] pc;
+	 reg[31:0] pc_next, pc_4;
+	 wire [31:0] insn_type, data_readRegA, data_readRegB, extended, src, readData, data_result;
+	 wire [4:0] rd;
+	 wire Rdst, writeEnable, ALUsrc, RegMem;
+	 divider_2 div2(clock, reset, clk_2);
+	 divider_2 div4(clk_2, reset, clk_4);
+	 always @(posedge clk_4 or posedge reset)
+	 /* pc_next need to assign below*/
+	 pc = reset? 32'h00000000: pc_next;
+	 /* imem*/
+	 assign address_imem = pc[11:0];
+	 assign insn_type = q_imem;
+	 Mux_5bit rdst(insn_type[26:22], insn_type[16:12], Rdst, rd);
+	 /* regfile */
+	 assign ctrl_readRegA = insn_type[21:17];
+	 assign ctrl_readRegB = insn_type[16:12];
+	 assign ctrl_writeReg = rd;
+	 /* ALU */
+	 sign_extension sx(insn_type[16:0], extended);
+	 Mux_32bit alusrc(data_readRegB, extended, ALUsrc, src);
+	 alu ALU(data_readRegA, src, insn_type[6:2],
+			insn_type[11:7], data_result, isNotEqual, isLessThan, overflow);
+	 /* dmem */
+	 assign address_dmem = data_result[11:0];
+	 assign data = data_readRegB;
+	 assign wren = 1'b1;
+	 Mux_32bit REGMEM(data_result, q_dmem, RegMem, data_writeReg);
 endmodule
