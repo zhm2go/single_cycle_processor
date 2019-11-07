@@ -10,4 +10,5 @@ module PC(data, clock, reset, enable, out);
 			dffe_ref dffe0(out[i], data[i], clock, enable, reset);
 		end
 	endgenerate
+
 endmodule

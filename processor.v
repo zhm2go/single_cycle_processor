@@ -69,8 +69,10 @@ module processor(
     ctrl_readRegB,                  // O: Register to read from port B of regfile
     data_writeReg,                  // O: Data to write to for regfile
     data_readRegA,                  // I: Data from port A of regfile
-    data_readRegB                   // I: Data from port B of regfile
-);
+    data_readRegB                  // I: Data from port B of regfile
+	 /* for test */	
+	
+	 );
     // Control signals
     input clock, reset;
 
@@ -91,33 +93,65 @@ module processor(
     input [31:0] data_readRegA, data_readRegB;
 
     /* YOUR CODE STARTS HERE */
-	 wire clk_2, clk_4, isNotEqual, isLessThan, overflow;
-	 reg[31:0] pc;
-	 reg[31:0] pc_next, pc_4;
-	 wire [31:0] insn_type, data_readRegA, data_readRegB, extended, src, readData, data_result;
+	 wire isNotEqual, isLessThan, overflow;
+	 wire isNotEqual_4, isLessThan_4, overflow_4,isNotEqual_N, isLessThan_N, overflow_N;
+	 wire [31:0] pc;
+	 wire [31:0] pc_next, pc_1, pc_N, pc_T;
+	 wire [31:0] extended, src, readData, data_result;
 	 wire [4:0] rd;
-	 wire Rdst, writeEnable, ALUsrc, RegMem;
-	 divider_2 div2(clock, reset, clk_2);
-	 divider_2 div4(clk_2, reset, clk_4);
-	 always @(posedge clk_4 or posedge reset)
-	 /* pc_next need to assign below*/
-	 pc = reset? 32'h00000000: pc_next;
+	 wire ALU, BLT, BNE, JP, JR, JAL, BEX, SETX, SW, LW, ADDI, ADD, SUB;
+	 /* control bit */
+	 
+	  
+	 /* pc */
+	 PC pc_0(pc_next, clock, reset, 1'b1, pc);
+	 alu_4 plus1(pc, 32'h00000001, 5'b00000,
+			5'b00000, pc_1, isNotEqual_4, isLessThan_4, overflow_4);
 	 /* imem*/
 	 assign address_imem = pc[11:0];
-	 assign insn_type = q_imem;
-	 Mux_5bit rdst(insn_type[26:22], insn_type[16:12], Rdst, rd);
+	 /* s1 */
+	 wire[4:0] s1_1;
+	 control_bit all_cb(q_imem, ALU, ADDI, SW, LW, JP, JR, JAL, BLT, BNE, BEX, SETX, ADD, SUB);
+	 Mux_5bit s1_mux1(q_imem[21:17], q_imem[26:22], JR || BNE || BLT, s1_1);
+	 Mux_5bit s1_mux2(s1_1, 5'b11110, BEX, ctrl_readRegA);
+	 /* s2 */
+	 wire[4:0] s2_1, s2_2;
+	 Mux_5bit s2_mux1(q_imem[16:12], q_imem[21:17], BNE || BLT || SW || LW, s2_1);
+	 Mux_5bit s2_mux2(s2_1, 5'b00000, BEX, s2_2);
+	 Mux_5bit s2_mux3(s2_2, q_imem[26:22], SW || LW, ctrl_readRegB);
+	 /* rd */
+	 wire[4:0] rd_1;
+	 Mux_5bit rd_mux1(q_imem[26:22], 5'b11111, JAL, rd_1);
+	 Mux_5bit rd_mux2(rd_1, 5'b11110, SETX || (overflow && (ADD || ADDI || SUB)), ctrl_writeReg);
 	 /* regfile */
-	 assign ctrl_readRegA = insn_type[21:17];
-	 assign ctrl_readRegB = insn_type[16:12];
-	 assign ctrl_writeReg = rd;
+	 assign ctrl_writeEnable = (ALU || ADDI || LW || JAL || SETX || overflow) && ~clock;
 	 /* ALU */
-	 sign_extension sx(insn_type[16:0], extended);
+	 wire [31:0] ALUsrc;
+	 sign_extension sx(q_imem[16:0], extended);
+	 assign ALUsrc = ADDI || SW || LW;
 	 Mux_32bit alusrc(data_readRegB, extended, ALUsrc, src);
-	 alu ALU(data_readRegA, src, insn_type[6:2],
-			insn_type[11:7], data_result, isNotEqual, isLessThan, overflow);
+	 alu ALU_0(data_readRegA, src, (ALU?q_imem[6:2]:5'b00000),
+			q_imem[11:7], data_result, isNotEqual, isLessThan, overflow);
 	 /* dmem */
 	 assign address_dmem = data_result[11:0];
 	 assign data = data_readRegB;
-	 assign wren = 1'b1;
-	 Mux_32bit REGMEM(data_result, q_dmem, RegMem, data_writeReg);
+	 assign wren = SW;
+	 /* data_writeReg */
+	 wire[31:0] T;
+	 ex27_32 t32(q_imem[26:0], T);
+	 wire[31:0] data1, data2, data3, data4, data5;
+	 Mux_32bit mux_rwd(data_result, q_dmem, LW, data1);
+	 Mux_32bit mux_jal(data1, pc_1, JAL, data2);
+	 Mux_32bit mux_setx(data2, T, SETX, data3);
+	 Mux_32bit mux_add_overflow(data3, 32'h00000001, ADD && overflow, data4);
+	 Mux_32bit mux_addi_overflow(data4, 32'h00000002, ADDI && overflow, data5);
+	 Mux_32bit mux_sub_overflow(data5, 32'h00000003, SUB && overflow, data_writeReg);
+	 /* PC_next*/
+	 wire[31:0] pc_1N, pc_2, pc_t;
+	 alu_N plusn(pc_1, extended, 5'b00000,
+			5'b00000, pc_1N, isNotEqual_N, isLessThan_N, overflow_N);
+	 Mux_32bit BLT_BNE(pc_1, pc_1N, (BLT && isLessThan) || (BNE && isNotEqual), pc_2);
+	 Mux_32bit mux_JP(pc_2, T, JP || JAL || BEX, pc_t);
+	 Mux_32bit mux_JR(pc_t, data_readRegA, JR, pc_next);
+	 /* for test*/
 endmodule
